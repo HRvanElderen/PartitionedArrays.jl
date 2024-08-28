@@ -139,10 +139,6 @@ end
 function pc_setup(np, ranks, l, nx, ny, nz)
 
 	f2c_vec = Vector{Vector{Int32}}(undef, l - 1)
-	r = Vector{PVector}(undef, l)
-	x = Vector{PVector}(undef, l)
-	Axf = Vector{PVector}(undef, l)
-	gs_states = Vector{PartitionedSolvers.Preconditioner}(undef, l)
 	npx, npy, npz = compute_optimal_shape_XYZ(np)
 	nnz_vec = Vector{Int64}(undef, l)
 	nrows_vec = Vector{Int64}(undef, l)
@@ -169,21 +165,6 @@ function pc_setup(np, ranks, l, nx, ny, nz)
 
 	for i ∈ reverse(1:l-1)
 		f2c_vec[i] = restrict_operator(nx, ny, nz)
-		gny = npy * ny
-		gnz = npz * nz
-		A_vec[i], r[i] = build_p_matrix(ranks, nx, ny, nz, gnx, gny, gnz, npx, npy, npz)
-
-		x[i] = similar(r[i])
-		Axf[i] = similar(r[i])
-		Axf[i] .= 0
-		x[i] .= 0
-		gs_states[i] = setup(solver, x[i], A_vec[i], r[i])
-
-		if i != 1
-			f2c[i-1] = restrict_operator(nx, ny, nz)
-		end
-		nrows_vec[i] = size(A_vec[i], 1)
-		nnz_vec[i] = PartitionedArrays.nnz(A_vec[i])
 		nx = div(nx, 2)
 		ny = div(ny, 2)
 		nz = div(nz, 2)
@@ -238,7 +219,7 @@ end
 	- `r_c`: coarse residual.
 """
 function restrict!(r_c, r_f, Axf, f2c)
-	for (i, v) in pairs(f2c)
+	Threads.@threads for (i, v) in enumerate(f2c)
 		r_c[i] = r_f[v] - Axf[v]
 	end
 	r_c
@@ -260,7 +241,7 @@ end
 	- `x_f`: fine approximated solution.
 """
 function prolongate!(x_f, x_c, f2c)
-	for (i, v) in pairs(f2c)
+	Threads.@threads for (i, v) in enumerate(f2c)
 		x_f[v] += x_c[i]
 	end
 	x_f
