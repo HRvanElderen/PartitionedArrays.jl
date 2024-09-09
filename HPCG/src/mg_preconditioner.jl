@@ -137,13 +137,13 @@ end
 	- `Geometry`: struct containing geometry data
 """
 function pc_setup(np, ranks, l, nx, ny, nz)
-
 	f2c_vec = Vector{Vector{Int32}}(undef, l - 1)
 	npx, npy, npz = compute_optimal_shape_XYZ(np)
 	nnz_vec = Vector{Int64}(undef, l)
 	nrows_vec = Vector{Int64}(undef, l)
-	solver = additive_schwarz_correction(gauss_seidel(; iters = 1))
+	solver = additive_schwarz(gauss_seidel(; iters = 1))
 
+	# create top problem 
 	A, r, x, Axf, gs_state = generate_problem(ranks, npx, npy, npz, nx, ny, nz, solver)
 	A_vec = Vector{typeof(A)}(undef, l)
 	r_vec = Vector{typeof(r)}(undef, l)
@@ -163,6 +163,7 @@ function pc_setup(np, ranks, l, nx, ny, nz)
 	tny = ny
 	tnz = nz
 
+	# create lower levels
 	for i ∈ reverse(1:l-1)
 		f2c_vec[i] = restrict_operator(nx, ny, nz)
 		nx = div(nx, 2)
@@ -313,7 +314,7 @@ function pc_solve!(x, s::Mg_preconditioner, b, l)
 	if l == 1
 		solve!(x, s.gs_states[l], b, zero_guess = true) # bottom solve
 	else
-		solve!(x, s.gs_states[l], b, zero_guess = true) # presmoother - TODO first halo exchange can be skipped / first gsweep can be kept to below the diagonal
+		solve!(x, s.gs_states[l], b, zero_guess = true) # presmoother 
 		mul!(s.Axf[l], s.A_vec[l], x)
 		p_restrict!(s.r[l-1], b, s.Axf[l], s.f2c[l-1])
 		pc_solve!(s.x[l-1], s, s.r[l-1], l - 1)
