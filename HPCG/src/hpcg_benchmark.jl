@@ -2,6 +2,7 @@ include("ref_cg.jl")
 include("opt_cg.jl")
 include("report_results.jl")
 include("mg_preconditioner.jl")
+include("threads_helpers.jl")
 
 """
 	hpcg_benchmark(distribute, np, nx, ny, nz; total_runtime = 60) -> output to file

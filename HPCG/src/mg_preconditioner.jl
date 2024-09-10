@@ -1,6 +1,5 @@
 include("compute_optimal_xyz.jl")
 include("sparse_matrix.jl")
-
 """
 	Mg_preconditioner
 
@@ -220,7 +219,7 @@ end
 	- `r_c`: coarse residual.
 """
 function restrict!(r_c, r_f, Axf, f2c)
-	Threads.@threads for (i, v) in enumerate(f2c)
+	Threads.@threads for (i, v) in collect(enumerate(f2c))
 		r_c[i] = r_f[v] - Axf[v]
 	end
 	r_c
@@ -242,7 +241,7 @@ end
 	- `x_f`: fine approximated solution.
 """
 function prolongate!(x_f, x_c, f2c)
-	Threads.@threads for (i, v) in enumerate(f2c)
+	Threads.@threads for (i, v) in collect(enumerate(f2c))
 		x_f[v] += x_c[i]
 	end
 	x_f
@@ -315,7 +314,7 @@ function pc_solve!(x, s::Mg_preconditioner, b, l)
 		solve!(x, s.gs_states[l], b, zero_guess = true) # bottom solve
 	else
 		solve!(x, s.gs_states[l], b, zero_guess = true) # presmoother 
-		mul!(s.Axf[l], s.A_vec[l], x)
+		tspmv!(s.Axf[l], s.A_vec[l], x)
 		p_restrict!(s.r[l-1], b, s.Axf[l], s.f2c[l-1])
 		pc_solve!(s.x[l-1], s, s.r[l-1], l - 1)
 		p_prolongate!(x, s.x[l-1], s.f2c[l-1])

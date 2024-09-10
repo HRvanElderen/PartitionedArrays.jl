@@ -1,3 +1,4 @@
+
 """
 	Conjugate gradient solver from IterativeSolvers with benchmark timing added.
 """
@@ -26,51 +27,6 @@ end
 # Preconditioned CG #
 #####################
 
-function dot_tturbo(a::PVector, b::PVector)
-	s = 0.0
-	map(own_values(a), own_values(b)) do a_own, b_own
-		Threads.@threads for i ∈ eachindex(a_own, b_own)
-			s += a_own[i] * b_own[i]
-		end
-	end
-	s
-end
-
-function spmv_latency_hiding!(y, A, x)
-	t = consistent!(x)
-	map(own_values(y), own_own_values(A), own_values(x)) do y_own, A_own, x_own
-		Threads.@threads for col ∈ 1:length(x_own)
-			sum = zero(eltype(y_own))
-			for p in nzrange(A_own, col)
-				row = A_own.rowval[p]
-				a = A_own.nzval[p]
-				sum += a * x_own.parent[row]
-			end
-			y_own[col] = sum
-		end
-	end
-	wait(t)
-	map(own_values(y), own_ghost_values(A), ghost_values(x)) do y_own, A_own, x_own
-		Threads.@threads for col ∈ 1:length(x_own)
-			sum = zero(eltype(y_own))
-			for p in nzrange(A_own, col)
-				row = A_own.rowval[p]
-				a = A_own.nzval[p]
-				sum += a * x_own.parent[row]
-			end
-			y_own[col] += sum
-		end
-	end
-	y
-end
-
-# function spmv_latency_hiding!(y, A, x)
-# 	t = consistent!(x)
-# 	vmap(mul!, own_values(y), own_own_values(A), own_values(x))
-# 	wait(t)
-# 	vmap(muladd!, own_values(y), own_ghost_values(A), ghost_values(x))
-# 	y
-# end
 
 function iterate(it::PCGIterable, iteration::Int = start(it))
 	# Check for termination first
@@ -89,18 +45,21 @@ function iterate(it::PCGIterable, iteration::Int = start(it))
 
 		# u := c + βu (almost an axpy)
 		β = it.ρ / ρ_prev
-		it.timing_data[3] += @elapsed it.u .= it.c .+ β .* it.u
+		#it.timing_data[3] += @elapsed it.u .= it.c .+ β .* it.u
+		it.timing_data[3] += @elapsed waxpby(1, it.c, β, it.u)
 
 		# c = A * u
-		it.timing_data[4] += @elapsed spmv_latency_hiding!(it.c, it.A, it.u)
+		it.timing_data[4] += @elapsed tspmv!(it.c, it.A, it.u)
 		it.timing_data[2] += @elapsed uc = dot_tturbo(it.u, it.c)
 		α = it.ρ / uc
 
 		# Improve solution and residual
-		it.timing_data[3] += @elapsed it.x .+= α .* it.u
-		it.timing_data[3] += @elapsed it.r .-= α .* it.c
+		# it.timing_data[3] += @elapsed it.x .+= α .* it.u
+		# it.timing_data[3] += @elapsed it.r .-= α .* it.c
+		it.timing_data[3] += @elapsed waxpby(α, it.u, 1, it.x)
+		it.timing_data[3] += @elapsed waxpby(-α, it.c, 1, it.r)
 
-		it.timing_data[2] += @elapsed it.residual = norm(it.r)
+		it.timing_data[2] += @elapsed it.residual = sqrt(dot_tturbo(it.r, it.r))
 	end
 	# Return the residual at item and iteration number as state
 	it.residual, iteration + 1
